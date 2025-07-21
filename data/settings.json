@@ -1,0 +1,12 @@
+{
+    "output_directory": "C:\\Users\\saulo.MELONIADVOGADOS\\OneDrive\\Projetos\\pdf_slicer\\output_pdfs",
+    "compress_output": false,
+    "open_folder_after_extraction": false,
+    "max_threads": 4,
+    "chunk_size": 10,
+    "enable_cache": true,
+    "cache_size": 100,
+    "log_level": "INFO",
+    "log_to_file": true,
+    "debug_mode": false
+}

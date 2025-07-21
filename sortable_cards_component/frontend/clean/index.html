@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #111;
+    }
+    #list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 20px;
+      justify-content: center;
+    }
+    .item {
+      width: 130px;
+      height: 130px;
+      background: #333;
+      color: #fff;
+      border: 2px solid #555;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      cursor: grab;
+      box-sizing: border-box;
+      transition: all 0.2s ease;
+    }
+    .item.dragging {
+      opacity: 0.5;
+    }
+    .icon {
+      font-size: 30px;
+      margin-bottom: 4px;
+    }
+    .filename {
+      margin: 3px 0;
+      text-align: center;
+      font-weight: bold;
+      font-size: 12px;
+      line-height: 1.2;
+    }
+    .fileinfo {
+      margin: 1px 0;
+      text-align: center;
+      font-size: 11px;
+      color: #bbb;
+      line-height: 1.1;
+    }
+    #status {
+      text-align: center;
+      color: #666;
+      font-size: 12px;
+      margin-top: 10px;
+    }
+    .changed {
+      color: #4CAF50;
+    }
+    #debug {
+      margin-top: 10px;
+      padding: 10px;
+      background: #222;
+      border-radius: 5px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #00ff00;
+      text-align: center;
+    }
+    .debug-hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="list"></div>
+  <div id="status">✅ Componente LIMPO - pronto para usar</div>
+  <div id="debug">
+    <div>🎯 ORDEM ATUAL: <span id="current-order">[]</span></div>
+    <div>📊 STATUS: <span id="debug-status">Inicializado</span></div>
+  </div>
+
+  <script>
+    function sendMessageToStreamlitClient(type, data) {
+      const outData = Object.assign({ isStreamlitMessage: true, type }, data);
+      window.parent.postMessage(outData, "*");
+    }
+
+    function init() {
+      sendMessageToStreamlitClient("streamlit:componentReady", { apiVersion: 1 });
+    }
+
+    let lastHeight = 0;
+    let isInitialized = false;
+    let currentOrder = [];
+    let originalOrder = [];
+    
+    function setFrameHeight() {
+      const height = document.documentElement.scrollHeight + 20;
+      if (Math.abs(height - lastHeight) > 10) {
+        lastHeight = height;
+        sendMessageToStreamlitClient("streamlit:setFrameHeight", { height });
+      }
+    }
+
+    function getCurrentOrder() {
+      const list = document.getElementById("list");
+      return [...list.children].map(x => x.dataset.id);
+    }
+
+    function updateStatus() {
+      const order = getCurrentOrder();
+      const hasChanges = JSON.stringify(order) !== JSON.stringify(originalOrder);
+      
+      const status = document.getElementById("status");
+      if (hasChanges) {
+        status.textContent = "✓ Ordem alterada - detectando mudanças";
+        status.className = "changed";
+      } else {
+        status.textContent = "✅ Componente LIMPO - pronto para usar";
+        status.className = "";
+      }
+    }
+    
+    function updateDebug() {
+      const order = getCurrentOrder();
+      const hasChanges = JSON.stringify(order) !== JSON.stringify(originalOrder);
+      
+      document.getElementById("current-order").textContent = JSON.stringify(order);
+      document.getElementById("debug-status").textContent = hasChanges ? "🔄 Alterado" : "⭐ Original";
+    }
+
+    function sendCurrentOrder() {
+      const order = getCurrentOrder();
+      console.log("📤 Enviando ordem para Python:", order);
+      
+      sendMessageToStreamlitClient("streamlit:setComponentValue", {
+        value: order
+      });
+    }
+
+    function renderItems(files, showDebug) {
+      if (isInitialized) {
+        return; // Só inicializa uma vez
+      }
+      
+      isInitialized = true;
+      console.log("🎯 COMPONENTE LIMPO: Inicializando com", files.length, "arquivos");
+      
+      // Configurar debug
+      const debugDiv = document.getElementById("debug");
+      if (!showDebug) {
+        debugDiv.className = "debug-hidden";
+      }
+      
+      const list = document.getElementById("list");
+      list.innerHTML = "";
+
+      files.forEach(f => {
+        const el = document.createElement("div");
+        el.className = "item";
+        el.dataset.id = f.id;
+        
+        // Formatação inteligente do tamanho
+        const formatSize = (sizeMB) => {
+          if (sizeMB < 1) {
+            const sizeKB = sizeMB * 1024;
+            return sizeKB < 100 ? `${sizeKB.toFixed(1)} KB` : `${Math.round(sizeKB)} KB`;
+          } else {
+            return sizeMB < 100 ? `${sizeMB.toFixed(1)} MB` : `${Math.round(sizeMB)} MB`;
+          }
+        };
+        
+        el.innerHTML = `
+          <div class="icon">${f.type && f.type.startsWith("image") ? "📷" : "📄"}</div>
+          <div class="filename">${f.name}</div>
+          <div class="fileinfo">${f.pages} páginas</div>
+          <div class="fileinfo">${formatSize(f.size)}</div>
+        `;
+        list.appendChild(el);
+      });
+
+      // Salvar ordem original
+      originalOrder = getCurrentOrder();
+      currentOrder = [...originalOrder];
+
+      // Configurar Sortable
+      new Sortable(list, {
+        animation: 150,
+        onStart: evt => {
+          evt.item.classList.add('dragging');
+        },
+        onEnd: evt => {
+          evt.item.classList.remove('dragging');
+          
+          const newOrder = getCurrentOrder();
+          const hasChanges = JSON.stringify(newOrder) !== JSON.stringify(originalOrder);
+          
+          console.log("🔄 Drag finalizado. Nova ordem:", newOrder);
+          console.log("📊 Houve mudanças:", hasChanges);
+          
+          updateStatus();
+          updateDebug();
+          
+          // ENVIAR SEMPRE - mesmo quando volta ao original
+          sendCurrentOrder();
+        }
+      });
+
+      updateStatus();
+      updateDebug();
+      
+      setTimeout(() => {
+        setFrameHeight();
+      }, 100);
+    }
+
+    window.addEventListener("message", e => {
+      if (e.data.type === "streamlit:render") {
+        const files = e.data.args.files || [];
+        const showDebug = e.data.args.show_debug !== false; // Default true
+        
+        console.log("📡 COMPONENTE LIMPO: Recebendo render", {
+          arquivos: files.length,
+          debug: showDebug
+        });
+        
+        renderItems(files, showDebug);
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

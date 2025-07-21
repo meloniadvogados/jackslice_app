@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #111;
+      color: white;
+      padding: 20px;
+    }
+    .status {
+      background: #333;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="status">
+    <h3>Componente ZERO - Nunca Envia Dados</h3>
+    <p>Status: <span id="status">Carregando...</span></p>
+    <p>Comando: <span id="command">Nenhum</span></p>
+  </div>
+
+  <script>
+    function sendMessageToStreamlitClient(type, data) {
+      // NUNCA envia setComponentValue - bloqueio total
+      if (type === "streamlit:setComponentValue") {
+        console.log("🚫 BLOQUEADO TOTALMENTE: setComponentValue");
+        return;
+      }
+      
+      const outData = Object.assign({ isStreamlitMessage: true, type }, data);
+      window.parent.postMessage(outData, "*");
+    }
+
+    function init() {
+      document.getElementById("status").textContent = "Pronto";
+      sendMessageToStreamlitClient("streamlit:componentReady", { apiVersion: 1 });
+      sendMessageToStreamlitClient("streamlit:setFrameHeight", { height: 200 });
+    }
+
+    window.addEventListener("message", e => {
+      if (e.data.type === "streamlit:render") {
+        const command = e.data.args.command;
+        document.getElementById("command").textContent = command || "null";
+        console.log("Comando recebido:", command);
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

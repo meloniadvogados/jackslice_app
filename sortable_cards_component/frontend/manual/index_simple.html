@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #111;
+      color: white;
+      padding: 20px;
+    }
+    .status {
+      background: #333;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="status">
+    <h3>Componente Manual Simples</h3>
+    <p>Status: <span id="status">Carregando...</span></p>
+    <p>Comando recebido: <span id="command">Nenhum</span></p>
+  </div>
+
+  <script>
+    function sendMessageToStreamlitClient(type, data) {
+      const outData = Object.assign({ isStreamlitMessage: true, type }, data);
+      window.parent.postMessage(outData, "*");
+    }
+
+    function init() {
+      document.getElementById("status").textContent = "Pronto";
+      sendMessageToStreamlitClient("streamlit:componentReady", { apiVersion: 1 });
+      sendMessageToStreamlitClient("streamlit:setFrameHeight", { height: 200 });
+    }
+
+    // NUNCA envia dados automaticamente - só quando explicitamente solicitado
+    function handleCommand(command) {
+      document.getElementById("command").textContent = command || "null";
+      
+      if (command === "get_order") {
+        // Só agora envia dados
+        sendMessageToStreamlitClient("streamlit:setComponentValue", {
+          value: [0, 1, 2],
+          message: "Ordem obtida com sucesso"
+        });
+      }
+    }
+
+    window.addEventListener("message", e => {
+      if (e.data.type === "streamlit:render") {
+        const command = e.data.args.command;
+        handleCommand(command);
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

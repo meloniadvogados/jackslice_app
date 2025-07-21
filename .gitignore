@@ -1,0 +1,18 @@
+# Ignorar ambientes virtuais
+.venv/
+env/
+venv/
+
+# Ignorar cache do Python
+__pycache__/
+*.py[cod]
+
+# Ignorar arquivos temporários ou logs
+*.log
+*.tmp
+debug_logs/
+
+# Ignorar diretórios específicos do seu projeto
+outputs/
+dados_brutos/
+relatorios_antigos/

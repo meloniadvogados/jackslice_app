@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #111;
+    }
+    #list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 20px;
+      justify-content: center;
+    }
+    .item {
+      width: 160px;
+      height: 160px;
+      background: #333;
+      color: #fff;
+      border: 2px solid #555;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      cursor: grab;
+      box-sizing: border-box;
+    }
+    .icon {
+      font-size: 32px;
+      margin-bottom: 6px;
+    }
+    .line {
+      margin: 2px 0;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="list"></div>
+
+  <script>
+    function sendMessageToStreamlitClient(type, data) {
+      const outData = Object.assign({ isStreamlitMessage: true, type }, data);
+      window.parent.postMessage(outData, "*");
+    }
+
+    function init() {
+      sendMessageToStreamlitClient("streamlit:componentReady", { apiVersion: 1 });
+    }
+
+    function setFrameHeight(height) {
+      sendMessageToStreamlitClient("streamlit:setFrameHeight", { height });
+    }
+
+    function sendDataToPython(data) {
+      sendMessageToStreamlitClient("streamlit:setComponentValue", data);
+    }
+
+    let currentOrder = [];
+    let autoUpdate = true;
+    let hasChanges = false;
+
+    function getCurrentOrder() {
+      const list = document.getElementById("list");
+      return [...list.children].map(x => x.dataset.id);
+    }
+
+    function renderItems(files) {
+      const list = document.getElementById("list");
+      list.innerHTML = "";
+
+      files.forEach(f => {
+        const el = document.createElement("div");
+        el.className = "item";
+        el.dataset.id = f.id;
+        el.innerHTML = `
+          <div class="icon">${f.type && f.type.startsWith("image") ? "📷" : "📄"}</div>
+          <div class="line">${f.name}</div>
+          <div class="line">${f.pages} páginas</div>
+          <div class="line">${f.size} MB</div>
+        `;
+        list.appendChild(el);
+      });
+
+      new Sortable(list, {
+        animation: 150,
+        onEnd: evt => {
+          currentOrder = getCurrentOrder();
+          hasChanges = true;
+          
+          if (autoUpdate) {
+            // Modo automático: envia imediatamente
+            sendDataToPython({ value: currentOrder });
+          } else {
+            // Modo manual: armazena a ordem mas NÃO envia
+            // Python vai ler a ordem quando precisar
+            window.currentSortableOrder = currentOrder;
+          }
+        }
+      });
+
+      // Envia ordem inicial apenas se for auto_update
+      if (autoUpdate) {
+        currentOrder = getCurrentOrder();
+        sendDataToPython({ value: currentOrder });
+      }
+
+      setTimeout(() => {
+        setFrameHeight(document.documentElement.scrollHeight);
+      }, 50);
+    }
+
+    // Função para obter ordem sob demanda (Python pode chamar isso)
+    window.getSortableOrder = function() {
+      return getCurrentOrder();
+    };
+
+    window.addEventListener("message", e => {
+      if (e.data.type === "streamlit:render") {
+        const files = e.data.args.files || [];
+        autoUpdate = e.data.args.auto_update !== false;  // default true
+        renderItems(files);
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

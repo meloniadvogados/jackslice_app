@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(python:*)",
+      "Bash(rustc:*)",
+      "Bash(source:*)",
+      "Bash(npm:*)",
+      "Bash(cargo install:*)",
+      "Bash(rm:*)",
+      "Bash(npx create-tauri-app:*)",
+      "Bash(npx tailwindcss:*)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(pip install:*)",
+      "Bash(rg:*)",
+      "Bash(ls:*)",
+      "Bash(pip3 install:*)",
+      "Bash(cp:*)",
+      "Bash(true)",
+      "Bash(streamlit run:*)",
+      "Bash(timeout:*)"
+    ],
+    "deny": []
+  }
+}

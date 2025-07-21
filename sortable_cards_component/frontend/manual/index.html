@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #111;
+    }
+    #list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 20px;
+      justify-content: center;
+    }
+    .item {
+      width: 130px;
+      height: 130px;
+      background: #333;
+      color: #fff;
+      border: 2px solid #555;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      cursor: grab;
+      box-sizing: border-box;
+      transition: all 0.2s ease;
+    }
+    .item.dragging {
+      opacity: 0.5;
+    }
+    .icon {
+      font-size: 30px;
+      margin-bottom: 4px;
+    }
+    .filename {
+      margin: 3px 0;
+      text-align: center;
+      font-weight: bold;
+      font-size: 12px;
+      line-height: 1.2;
+    }
+    .fileinfo {
+      margin: 1px 0;
+      text-align: center;
+      font-size: 11px;
+      color: #bbb;
+      line-height: 1.1;
+    }
+    #status {
+      text-align: center;
+      color: #666;
+      font-size: 12px;
+      margin-top: 10px;
+    }
+    .changed {
+      color: #4CAF50;
+    }
+  </style>
+</head>
+<body>
+  <div id="list"></div>
+  <div id="status">Pronto para reordenar</div>
+  <div id="debug" style="margin-top: 10px; padding: 10px; background: #222; border-radius: 5px; font-family: monospace; font-size: 11px; color: #00ff00;">
+    <div>🔍 DEBUG - Ordem atual: <span id="current-order">[]</span></div>
+    <div>📊 Status: <span id="debug-status">Inicializado</span></div>
+  </div>
+
+  <script>
+    function sendMessageToStreamlitClient(type, data) {
+      const outData = Object.assign({ isStreamlitMessage: true, type }, data);
+      window.parent.postMessage(outData, "*");
+    }
+
+    function init() {
+      sendMessageToStreamlitClient("streamlit:componentReady", { apiVersion: 1 });
+    }
+
+    let lastHeight = 0;
+    let isInitialized = false;
+    
+    function setFrameHeight(height) {
+      // Só atualiza se a altura mudou significativamente
+      if (Math.abs(height - lastHeight) > 10) {
+        lastHeight = height;
+        sendMessageToStreamlitClient("streamlit:setFrameHeight", { height });
+      }
+    }
+
+    let allowDataSending = false;
+    
+    function sendDataToPython(data) {
+      // BLOQUEIA envio se não autorizado
+      if (!allowDataSending) {
+        return;
+      }
+      
+      sendMessageToStreamlitClient("streamlit:setComponentValue", data);
+    }
+
+    let currentOrder = [];
+    let originalOrder = [];
+    let hasChanges = false;
+    let requestCounter = 0;
+    
+    // Estado global compartilhado entre instâncias
+    if (!window.sortableCardsGlobalState) {
+      window.sortableCardsGlobalState = {};
+    }
+
+    function getCurrentOrder() {
+      const list = document.getElementById("list");
+      return [...list.children].map(x => x.dataset.id);
+    }
+
+    function updateStatus() {
+      const status = document.getElementById("status");
+      if (hasChanges) {
+        status.textContent = "✓ Ordem alterada - aguardando aplicação";
+        status.className = "changed";
+      } else {
+        status.textContent = "Pronto para reordenar";
+        status.className = "";
+      }
+    }
+    
+    function updateDebug() {
+      const order = getCurrentOrder();
+      document.getElementById("current-order").textContent = JSON.stringify(order);
+      document.getElementById("debug-status").textContent = hasChanges ? "Alterado" : "Original";
+    }
+
+    function renderItems(files, command, componentKey) {
+      // MODO CONSULTA: Se receber comando "get_order" de uma key diferente
+      if (command === "get_order" && componentKey !== 'test_debug') {
+        console.log("MODO CONSULTA ativado");
+        // Tentar buscar a lista principal no DOM
+        const mainList = document.getElementById("list");
+        if (mainList && mainList.children.length > 0) {
+          const currentOrder = [...mainList.children].map(x => x.dataset.id);
+          console.log("Ordem encontrada:", currentOrder);
+          allowDataSending = true;
+          setTimeout(() => {
+            sendDataToPython({ 
+              value: currentOrder,
+              request_id: ++requestCounter,
+              source: 'query'
+            });
+            allowDataSending = false;
+          }, 100);
+        } else {
+          console.log("Lista principal não encontrada");
+        }
+        return;
+      }
+      
+      // Se receber comando "get_order" da instância principal
+      if (command === "get_order") {
+        allowDataSending = true; // LIBERA envio
+        const order = getCurrentOrder();
+        // Pequeno delay para garantir que o Streamlit processe corretamente
+        setTimeout(() => {
+          sendDataToPython({ 
+            value: order,
+            has_changes: hasChanges,
+            request_id: ++requestCounter
+          });
+          allowDataSending = false; // BLOQUEIA novamente
+        }, 100);
+        return;
+      }
+
+      // Se receber comando "reset_changes", limpa o flag
+      if (command === "reset_changes") {
+        hasChanges = false;
+        originalOrder = getCurrentOrder();
+        updateStatus();
+        allowDataSending = false; // Garante que está bloqueado
+        return;
+      }
+
+      // IMPORTANTE: Só renderiza se NÃO há comando (evita loops)
+      if (command !== null) {
+        allowDataSending = false; // Bloqueia para comandos desconhecidos
+        return;
+      }
+
+      // Para renderização inicial (command = null)
+      allowDataSending = false; // NUNCA permite na renderização inicial
+
+      // SÓ renderiza se ainda não foi inicializado
+      if (!isInitialized) {
+        isInitialized = true;
+        
+        // Renderização normal
+        const list = document.getElementById("list");
+        list.innerHTML = "";
+
+        files.forEach(f => {
+          const el = document.createElement("div");
+          el.className = "item";
+          el.dataset.id = f.id;
+          // Formatação inteligente do tamanho
+          const formatSize = (sizeMB) => {
+            if (sizeMB < 1) {
+              const sizeKB = sizeMB * 1024;
+              return sizeKB < 100 ? `${sizeKB.toFixed(1)} KB` : `${Math.round(sizeKB)} KB`;
+            } else {
+              return sizeMB < 100 ? `${sizeMB.toFixed(1)} MB` : `${Math.round(sizeMB)} MB`;
+            }
+          };
+          
+          el.innerHTML = `
+            <div class="icon">${f.type && f.type.startsWith("image") ? "📷" : "📄"}</div>
+            <div class="filename">${f.name}</div>
+            <div class="fileinfo">${f.pages} páginas</div>
+            <div class="fileinfo">${formatSize(f.size)}</div>
+          `;
+          list.appendChild(el);
+        });
+
+        originalOrder = getCurrentOrder();
+        currentOrder = [...originalOrder];
+
+        new Sortable(list, {
+          animation: 150,
+          onStart: evt => {
+            evt.item.classList.add('dragging');
+          },
+          onEnd: evt => {
+            evt.item.classList.remove('dragging');
+            currentOrder = getCurrentOrder();
+            hasChanges = JSON.stringify(currentOrder) !== JSON.stringify(originalOrder);
+            updateStatus();
+            updateDebug();
+            
+            // Salvar estado global para instância principal
+            if (componentKey === 'test_debug') {
+              window.sortableCardsGlobalState[componentKey] = {
+                currentOrder: currentOrder,
+                hasChanges: hasChanges
+              };
+            }
+          }
+        });
+
+        updateStatus();
+        updateDebug();
+        
+        // Salvar estado inicial para instância principal
+        if (componentKey === 'test_debug') {
+          window.sortableCardsGlobalState[componentKey] = {
+            currentOrder: currentOrder,
+            hasChanges: hasChanges
+          };
+        }
+
+        // Define altura apenas uma vez
+        setTimeout(() => {
+          setFrameHeight(document.documentElement.scrollHeight + 30);
+        }, 50);
+      }
+    }
+
+    window.addEventListener("message", e => {
+      if (e.data.type === "streamlit:render") {
+        const files = e.data.args.files || [];
+        const command = e.data.args.command || null;
+        const componentKey = e.data.args.key || 'default';
+        console.log("FRONTEND DEBUG:", { files: files.length, command, componentKey });
+        renderItems(files, command, componentKey);
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>
